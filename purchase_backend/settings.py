@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'custom_profile',  # Custom profile app
     'role',  # Role management app
     'corsheaders',
+    'purchase_request',  # Purchase request app
 ]
 
 REST_FRAMEWORK = {
