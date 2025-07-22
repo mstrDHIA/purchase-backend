@@ -9,8 +9,8 @@ class User(AbstractUser):
         'custom_profile.Profile',on_delete=models.CASCADE,
         related_name='user_profile', blank=True, null=True)
     role_id = models.OneToOneField(
-        'role.Profile',on_delete=models.CASCADE,
-        related_name='user_profile', blank=True, null=True)
+        'role.Role',on_delete=models.CASCADE,
+        related_name='role', blank=True, null=True)
     # Add more fields as needed
 
     def __str__(self):
