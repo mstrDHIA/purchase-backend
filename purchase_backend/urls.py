@@ -22,4 +22,5 @@ urlpatterns = [
     path('user/', include('custom_user.urls')),
     path('profile/', include('custom_profile.urls')),
     path('role/', include('role.urls')),
+    path('purchase_request/', include('purchase_request.urls')),
 ]

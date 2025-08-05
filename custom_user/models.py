@@ -11,6 +11,7 @@ class User(AbstractUser):
     role_id = models.OneToOneField(
         'role.Role',on_delete=models.CASCADE,
         related_name='role', blank=True, null=True)
+    
     # Add more fields as needed
 
     def __str__(self):

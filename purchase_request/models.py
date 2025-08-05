@@ -6,7 +6,7 @@ class PurchaseRequest(models.Model):
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
     approved_by = models.ForeignKey(
-        'custom_user.User', on_delete=models.CASCADE, related_name='approved_by')
+        'custom_user.User', on_delete=models.CASCADE, related_name='approved_by', blank=True, null=True)
     products = models.JSONField(blank=True, null=True)
     title = models.CharField(max_length=100)
     description = models.TextField()
@@ -19,7 +19,7 @@ class PurchaseRequest(models.Model):
     ], default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
 
     def __str__(self):
         return self.title
