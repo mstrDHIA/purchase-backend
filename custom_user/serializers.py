@@ -2,8 +2,11 @@
 from custom_user.models import User
 from rest_framework import serializers
 
+from custom_profile.models import Profile
 from custom_profile.serializers import ProfileSerializer
+from role.models import Role
 from role.serializers import RoleSerializer
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -15,12 +18,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password']
+        fields = ['id', 'username', 'email', 'password','role_id']
 
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data.get('email'),
+            role_id=validated_data.get('role_id'),
             password=validated_data['password']
         )
         return user
@@ -50,3 +54,40 @@ class ChangePasswordSerializer(serializers.Serializer):
         if attrs['old_password'] == attrs['new_password']:
             raise serializers.ValidationError("New password cannot be the same as the old password.")
         return attrs
+
+class UserProfileRoleUpdateSerializer(serializers.ModelSerializer):
+    profile = ProfileSerializer(required=False)
+    role = serializers.PrimaryKeyRelatedField(queryset=Role.objects.all(), required=False)
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'profile', 'role','is_active']  # Add other user fields as needed
+
+    def update(self, instance, validated_data):
+        profile_data = validated_data.pop('profile', None)
+        role_data = validated_data.pop('role', None)
+
+        # Update user fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        # Update profile fields if provided
+        if profile_data:
+            profile = instance.profile_id  # Use the correct related name
+            for attr, value in profile_data.items():
+                setattr(profile, attr, value)
+            profile.save()
+
+        # Update role if provided
+        if role_data:
+            instance.role = role_data
+
+        instance.save()
+        return instance
+    
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user_data = UserWithDetailsSerializer(self.user).data
+        data['user'] = user_data
+        return data

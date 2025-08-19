@@ -8,8 +8,9 @@ class User(AbstractUser):
     profile_id = models.OneToOneField(
         'custom_profile.Profile',on_delete=models.CASCADE,
         related_name='user_profile', blank=True, null=True)
-    role_id = models.OneToOneField(
+    role_id = models.ForeignKey(
         'role.Role',on_delete=models.CASCADE,
+        unique=False,
         related_name='role', blank=True, null=True)
     
     # Add more fields as needed
