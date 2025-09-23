@@ -1,11 +1,11 @@
 from rest_framework import serializers
-from .models import PurchaseRequest
+from .models import PurchaseOrder
 from custom_user.serializers import UserSerializer  # Import your user serializer
 
-class PurchaseRequestSerializer(serializers.ModelSerializer):
+class PurchaseOrderSerializer(serializers.ModelSerializer):
     requested_by = UserSerializer(read_only=True)
     approved_by = UserSerializer(read_only=True)
 
     class Meta:
-        model = PurchaseRequest
+        model = PurchaseOrder
         fields = '__all__'

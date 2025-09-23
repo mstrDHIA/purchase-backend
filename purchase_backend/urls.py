@@ -23,4 +23,6 @@ urlpatterns = [
     path('profile/', include('custom_profile.urls')),
     path('role/', include('role.urls')),
     path('purchase_request/', include('purchase_request.urls')),
+    path('purchase_order/', include('purchase_order.urls')),
+
 ]
