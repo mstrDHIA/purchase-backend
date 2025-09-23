@@ -23,8 +23,10 @@ class PurchaseOrder(models.Model):
         ('medium', 'Medium'),
         ('high', 'High')
     ], default='medium')
-    purchase_request = models.ForeignKey(
-        'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_orders', blank=True, null=True)    
+    purchase_request = models.OneToOneField(
+        'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_order', blank=True, null=True)
+    # purchase_request = models.ForeignKey(
+    #     'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_orders', blank=True, null=True)    
     # purchase_request = models.ForeignKey(
     #     'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_orders', blank=True, null=True)
 
