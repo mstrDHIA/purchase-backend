@@ -4,12 +4,12 @@ from django.db import models
 class PurchaseOrder(models.Model):
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
-    approved_by = models.ForeignKey(
+    approved_by_user = models.ForeignKey(
         'custom_user.User', on_delete=models.CASCADE, related_name='approved_by_user', blank=True, null=True)
     products = models.JSONField(blank=True, null=True)
     title = models.CharField(max_length=100)
     description = models.TextField()
-    requested_by = models.ForeignKey(
+    requested_by_user = models.ForeignKey(
         'custom_user.User', on_delete=models.CASCADE, related_name='requested_by_user')
     status = models.CharField(max_length=20, choices=[
         ('pending', 'Pending'),
