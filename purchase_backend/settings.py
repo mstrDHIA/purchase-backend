@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'purchase_request',  # Purchase request app
     'purchase_order',  # Purchase order app
+    'category',  # Category app
 ]
 
 REST_FRAMEWORK = {
