@@ -19,6 +19,7 @@ class PurchaseRequest(models.Model):
     ], default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_archived = models.BooleanField(default=False)
     priority = models.CharField(max_length=20, choices=[
         ('low', 'Low'),
         ('medium', 'Medium'),

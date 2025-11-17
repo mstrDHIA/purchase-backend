@@ -2,6 +2,7 @@ from django.db import models
 
 # Create your models here.
 class PurchaseOrder(models.Model):
+    id = models.IntegerField(primary_key=True,unique=True)
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
     approved_by_user = models.ForeignKey(

@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
-from purchase_order.models import PurchaseOrder   # adjust import path if your app/model name differs
+from purchase_request.models import PurchaseRequest   # adjust import path if your app/model name differs
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ class Command(BaseCommand):
             '--days',
             type=int,
             default=30,
-            help='Number of days after which an order becomes archived (default: 30)'
+            help='Number of days after which an request becomes archived (default: 30)'
         )
         parser.add_argument(
             '--dry-run',
@@ -27,20 +27,20 @@ class Command(BaseCommand):
         dry_run = options.get('dry_run', False)
         cutoff = timezone.now() - timedelta(days=days)
 
-        qs = PurchaseOrder.objects.filter(is_archived=False, created_at__lt=cutoff)
+        qs = PurchaseRequest.objects.filter(is_archived=False, created_at__lt=cutoff)
         count = qs.count()
 
         if dry_run:
             self.stdout.write(self.style.WARNING(
-                f"DRY RUN: {count} orders WOULD be archived (older than {days} days)."
+                f"DRY RUN: {count} requests WOULD be archived (older than {days} days)."
             ))
             return
 
         updated = qs.update(is_archived=True)
         self.stdout.write(self.style.SUCCESS(
-            f"{updated} orders archived (created before {cutoff})."
+            f"{updated} requests archived (created before {cutoff})."
         ))
-        logger.info("Archived %d orders older than %d days", updated, days)
+        logger.info("Archived %d requests older than %d days", updated, days)
 
 
 
