@@ -12,6 +12,10 @@ class User(AbstractUser):
         'role.Role',on_delete=models.CASCADE,
         unique=False,
         related_name='role', blank=True, null=True)
+    dep_id = models.ForeignKey(
+        'department.Department',on_delete=models.CASCADE,
+        unique=False,
+        related_name='department', blank=True, null=True)
     
     # Add more fields as needed
 

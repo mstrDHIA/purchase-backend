@@ -4,6 +4,8 @@ from rest_framework import serializers
 
 from custom_profile.models import Profile
 from custom_profile.serializers import ProfileSerializer
+from department.serializer import DepartmentSerializer
+from department.models import Department
 from role.models import Role
 from role.serializers import RoleSerializer
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -18,13 +20,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password','role_id']
+        fields = ['id', 'username', 'email', 'password','role_id','dep_id']
 
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data.get('email'),
             role_id=validated_data.get('role_id'),
+            dep_id=validated_data.get('dep_id'),
             password=validated_data['password']
         )
         return user
@@ -33,6 +36,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 class UserWithDetailsSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(source='profile_id', read_only=True)
     role = RoleSerializer(source='role_id',read_only=True)  # Adjust field name if needed
+    department = DepartmentSerializer(source='dep_id', read_only=True)
 
     class Meta:
         model = User
@@ -58,14 +62,16 @@ class ChangePasswordSerializer(serializers.Serializer):
 class UserProfileRoleUpdateSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(required=False)
     role = serializers.PrimaryKeyRelatedField(queryset=Role.objects.all(), required=False)
+    department = serializers.PrimaryKeyRelatedField(queryset=Department.objects.all(), required=False)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'profile', 'role','is_active']  # Add other user fields as needed
+        fields = ['id', 'username', 'email', 'profile', 'role','is_active','department']  # Add other user fields as needed
 
     def update(self, instance, validated_data):
         profile_data = validated_data.pop('profile', None)
         role_data = validated_data.pop('role', None)
+        department_data = validated_data.pop('department', None)
 
         # Update user fields
         for attr, value in validated_data.items():
@@ -81,6 +87,9 @@ class UserProfileRoleUpdateSerializer(serializers.ModelSerializer):
         # Update role if provided
         if role_data:
             instance.role = role_data
+
+        if department_data:
+            instance.department = department_data
 
         instance.save()
         return instance

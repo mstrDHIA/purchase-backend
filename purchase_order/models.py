@@ -14,9 +14,18 @@ class PurchaseOrder(models.Model):
         'custom_user.User', on_delete=models.CASCADE, related_name='requested_by_user')
     status = models.CharField(max_length=20, choices=[
         ('pending', 'Pending'),
+        ('edited', 'Edited'),
         ('approved', 'Approved'),
-        ('rejected', 'Rejected')
-    ], default='pending')
+        ('rejected', 'Rejected'),
+        ('terminated', 'Terminated')
+    ], default='pending'),
+    currency = models.CharField(max_length=10, blank=True, null=True, default='TND',
+                                choices=[
+('TND', 'TND'),
+('USD', 'USD'),
+('EUR', 'EUR')
+
+])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     priority = models.CharField(max_length=20, choices=[
@@ -32,7 +41,7 @@ class PurchaseOrder(models.Model):
     is_archived = models.BooleanField(default=False)    
     # purchase_request = models.ForeignKey(
     #     'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_orders', blank=True, null=True)
-
+    supplier_delivery_date = models.DateField(blank=True, null=True)
 
     def __str__(self):
         return self.title

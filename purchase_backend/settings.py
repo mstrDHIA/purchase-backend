@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     'purchase_order',  # Purchase order app
     'category',  # Category app
     'supplier',  # Supplier app
+    'department',  # Department app
+    'reject_reasons',  # Reject reasons app
 ]
 
 REST_FRAMEWORK = {

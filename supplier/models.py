@@ -6,8 +6,12 @@ class Supplier(models.Model):
     contact_email = models.EmailField()
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
+    group_name = models.CharField(max_length=100, blank=True, null=True)
+    contact_name = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    matricule_fiscale = models.CharField(max_length=100, blank=True, null=True)
+    cin=models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return self.name
