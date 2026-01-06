@@ -12,6 +12,7 @@ class Supplier(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     matricule_fiscale = models.CharField(max_length=100, blank=True, null=True)
     cin=models.CharField(max_length=100, blank=True, null=True)
+    code_fournisseur=models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return self.name
