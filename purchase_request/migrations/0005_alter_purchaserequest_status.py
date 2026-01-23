@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='purchaserequest',
             name='status',
-            field=models.CharField(choices=[('pending', 'Pending'), ('approved', 'Approved'), ('transformed', 'Transformed'), ('rejected', 'Rejected')], default='pending', max_length=20),
+            field=models.CharField(choices=[('pending', 'Pending'), ('approved', 'Approved'), ('transformed', 'Transformed'), ('rejected', 'Rejected'), ('for_modification', 'For modification')], default='pending', max_length=20),
         ),
     ]
