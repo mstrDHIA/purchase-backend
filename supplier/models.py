@@ -24,3 +24,21 @@ class Supplier(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class SupplierStat(models.Model):
+    """Daily aggregated statistics for a supplier (optional precomputed table)."""
+    supplier = models.ForeignKey('Supplier', on_delete=models.CASCADE, related_name='stats')
+    date = models.DateField()
+    total_spend = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    orders_count = models.IntegerField(default=0)
+    avg_order = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    by_subcategory = models.JSONField(blank=True, null=True, help_text='{"subcategory_id": {"name": str, "total": float, "orders": int}}')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('supplier', 'date')
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.supplier.name} - {self.date.isoformat()}"

@@ -28,5 +28,6 @@ urlpatterns = [
     path('supplier/', include('supplier.urls')),
     path('department/', include('department.urls')),
     path('reject_reasons/', include('reject_reasons.urls')),
+    path('stats/', include('statistic.urls')),
 
 ]
