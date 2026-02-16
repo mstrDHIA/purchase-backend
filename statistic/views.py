@@ -17,7 +17,7 @@ class POTotalsView(APIView):
 
     def get(self, request):
         try:
-            group_by = request.GET.get('group_by', 'department')
+            group_by = request.GET.get('group_by', 'summary')
             start, end = parse_date_params(request)
             dept_filter = request.GET.get('department')
             requester_filter = request.GET.get('requester')
@@ -61,6 +61,13 @@ class POTotalsView(APIView):
             
             # Check if ANY specific filter is provided (for single summary response)
             has_any_filter = any([dept_filter, requester_filter, category_filter, subcategory_filter, supplier_filter])
+
+            # Default summary view: return global totals
+            if group_by == 'summary':
+                total = qs.count()
+                rejected = qs.filter(rejected_q).count()
+                rejection_rate = (rejected / total) if total else 0
+                return Response({'total': total, 'rejected': rejected, 'rejection_rate': rejection_rate})
 
             if group_by == 'department':
                 data = qs.values('requested_by_user__dep_id__id', 'requested_by_user__dep_id__name').annotate(total=Count('id'), rejected=Count('id', filter=rejected_q)).order_by('-total')
