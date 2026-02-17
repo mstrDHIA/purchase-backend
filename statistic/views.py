@@ -3,6 +3,7 @@ from django.db.models.functions import Coalesce
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+import json
 
 from purchase_order.models import PurchaseOrder
 
@@ -11,6 +12,66 @@ def parse_date_params(request):
     start = request.GET.get('start_date')
     end = request.GET.get('end_date')
     return start, end
+
+
+def _prod_field_str(item, *field_names):
+    """Safely extract a string value for product fields.
+
+    If the field value is a dict, try common name keys ('name','title','label').
+    Return empty string when no usable string is found.
+    """
+    # If item is a JSON string, try to parse it
+    if isinstance(item, str):
+        try:
+            parsed = json.loads(item)
+            if isinstance(parsed, dict):
+                item = parsed
+            else:
+                return ''
+        except Exception:
+            return ''
+    if not isinstance(item, dict):
+        return ''
+    for fname in field_names:
+        v = item.get(fname)
+        if v is None:
+            continue
+        if isinstance(v, dict):
+            name = v.get('name') or v.get('title') or v.get('label')
+            if name:
+                return str(name)
+            continue
+        return str(v)
+    return ''
+
+
+def _prod_supplier_id(item):
+    """Return supplier id if present, otherwise None."""
+    if isinstance(item, str):
+        try:
+            item = json.loads(item)
+        except Exception:
+            return None
+    if not isinstance(item, dict):
+        return None
+    # common places for supplier id
+    supplier = item.get('supplier')
+    if isinstance(supplier, dict):
+        return supplier.get('id') or supplier.get('pk')
+    # sometimes supplier stored as id directly
+    if isinstance(supplier, int):
+        return supplier
+    # fallback keys
+    for k in ('supplier_id', 'supplierId', 'supplierID'):
+        v = item.get(k)
+        if isinstance(v, int):
+            return v
+        try:
+            if isinstance(v, str) and v.isdigit():
+                return int(v)
+        except Exception:
+            pass
+    return None
 
 
 class POTotalsView(APIView):
@@ -23,14 +84,17 @@ class POTotalsView(APIView):
             dept_filter = request.GET.get('department')
             requester_filter = request.GET.get('requester')
             # default: include PO without department (exclude_null_dept=false)
-            exclude_null_dept = request.GET.get('exclude_null_dept', 'false').lower() in ('1', 'true', 'yes')
+            exclude_null_dept = str(request.GET.get('exclude_null_dept', 'false')).lower() in ('1', 'true', 'yes')
             category_filter = request.GET.get('category')
             subcategory_filter = request.GET.get('subcategory')
             supplier_filter = request.GET.get('supplier')
             family_filter = request.GET.get('family')
             subfamily_filter = request.GET.get('subfamily')
 
-            qs = PurchaseOrder.objects.all()
+            # Filter only approved or rejected POs by default
+            qs = PurchaseOrder.objects.filter(
+                Q(statuss__iexact='approved') | Q(statuss__iexact='rejected')
+            )
             if start:
                 qs = qs.filter(created_at__date__gte=start)
             if end:
@@ -61,6 +125,49 @@ class POTotalsView(APIView):
                         Q(purchase_request__requested_by__username__iexact=requester_filter) | Q(requested_by_user__username__iexact=requester_filter)
                     )
 
+            # Apply product-related filters (category, subcategory, supplier, family, subfamily)
+            if any([category_filter, subcategory_filter, supplier_filter, family_filter, subfamily_filter]):
+                qs_list = list(qs)  # Convert to list for in-memory filtering
+                
+                if category_filter:
+                    qs_list = [po for po in qs_list if any(
+                        _prod_field_str(item, 'category', 'category_name').lower() == str(category_filter).lower()
+                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+                    )]
+                
+                if subcategory_filter:
+                    qs_list = [po for po in qs_list if any(
+                        _prod_field_str(item, 'subcategory', 'subcategory_name').lower() == str(subcategory_filter).lower()
+                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+                    )]
+                
+                if supplier_filter:
+                    supplier_is_digit = supplier_filter.isdigit()
+                    supplier_int = int(supplier_filter) if supplier_is_digit else None
+                    qs_list = [po for po in qs_list if any(
+                        (
+                            (_prod_field_str(item, 'supplier', 'supplier_name').lower() == str(supplier_filter).lower())
+                            if _prod_field_str(item, 'supplier', 'supplier_name') else False
+                        ) or (
+                            supplier_is_digit and (_prod_supplier_id(item) == supplier_int)
+                        )
+                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+                    )]
+                
+                if family_filter:
+                    qs_list = [po for po in qs_list if any(
+                        _prod_field_str(item, 'family', 'family_name').lower() == str(family_filter).lower()
+                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+                    )]
+                
+                if subfamily_filter:
+                    qs_list = [po for po in qs_list if any(
+                        _prod_field_str(item, 'subfamily', 'subfamily_name').lower() == str(subfamily_filter).lower()
+                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+                    )]
+                
+                qs = qs_list
+
             # consider a PO rejected if it has a rejected_reason OR its statuss (typo field) is 'rejected'
             rejected_q = Q(rejected_reason__isnull=False) | Q(statuss__iexact='rejected')
             
@@ -69,8 +176,16 @@ class POTotalsView(APIView):
 
             # Default summary view: return global totals
             if group_by == 'summary':
-                total = qs.count()
-                rejected = qs.filter(rejected_q).count()
+                if isinstance(qs, list):
+                    total = len(qs)
+                    rejected = sum(1 for po in qs if any([
+                        po.rejected_reason is not None,
+                        (po.statuss or '').lower() == 'rejected'
+                    ]))
+                else:
+                    total = qs.count()
+                    rejected = qs.filter(rejected_q).count()
+                
                 rejection_rate = (rejected / total) if total else 0
                 return Response({
                     'total': total,
@@ -101,32 +216,11 @@ class POTotalsView(APIView):
                 return Response(result)
 
             if group_by in ('category', 'subcategory', 'supplier', 'family', 'subfamily'):
-                # Filter qs by category/subcategory/supplier/family/subfamily if provided
-                if category_filter:
-                    qs = [po for po in qs if any(
-                        (item.get('category') or item.get('category_name')) == category_filter 
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                if subcategory_filter:
-                    qs = [po for po in qs if any(
-                        (item.get('subcategory') or item.get('subcategory_name')) == subcategory_filter 
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                if supplier_filter:
-                    qs = [po for po in qs if any(
-                        (item.get('supplier') or item.get('supplier_name')) == supplier_filter 
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                if family_filter:
-                    qs = [po for po in qs if any(
-                        (item.get('family') or item.get('family_name')) == family_filter 
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                if subfamily_filter:
-                    qs = [po for po in qs if any(
-                        (item.get('subfamily') or item.get('subfamily_name')) == subfamily_filter 
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
+                # At this point, qs is already filtered by product attributes above
+                # Now just group by the requested attribute
+                # Make sure qs is a list for iteration
+                if not isinstance(qs, list):
+                    qs = list(qs)
                 
                 counts_total = {}
                 counts_rejected = {}
@@ -139,15 +233,15 @@ class POTotalsView(APIView):
                     for item in products:
                         key = None
                         if group_by == 'category':
-                            key = item.get('category') or item.get('category_name')
+                            key = _prod_field_str(item, 'category', 'category_name')
                         elif group_by == 'subcategory':
-                            key = item.get('subcategory') or item.get('subcategory_name')
+                            key = _prod_field_str(item, 'subcategory', 'subcategory_name')
                         elif group_by == 'family':
-                            key = item.get('family') or item.get('family_name')
+                            key = _prod_field_str(item, 'family', 'family_name')
                         elif group_by == 'subfamily':
-                            key = item.get('subfamily') or item.get('subfamily_name')
+                            key = _prod_field_str(item, 'subfamily', 'subfamily_name')
                         else:
-                            key = item.get('supplier') or item.get('supplier_name')
+                            key = _prod_field_str(item, 'supplier', 'supplier_name')
                         if key:
                             keys_in_po.add(key)
                     for key in keys_in_po:
