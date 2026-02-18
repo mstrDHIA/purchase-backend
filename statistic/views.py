@@ -6,6 +6,7 @@ from rest_framework import status
 import json
 
 from purchase_order.models import PurchaseOrder
+from purchase_order.serializers import PurchaseOrderSerializer
 
 
 def parse_date_params(request):
@@ -74,99 +75,115 @@ def _prod_supplier_id(item):
     return None
 
 
+def get_filtered_purchase_orders(request, include_status_filter=True):
+    """Return a QuerySet or a list of PurchaseOrder objects filtered according to
+    the same rules used by POTotalsView. If product-related filters are present
+    a list is returned because products are stored as JSON and require
+    in-memory inspection.
+    """
+    start, end = parse_date_params(request)
+    dept_filter = request.GET.get('department')
+    requester_filter = request.GET.get('requester')
+    exclude_null_dept = str(request.GET.get('exclude_null_dept', 'false')).lower() in ('1', 'true', 'yes')
+    category_filter = request.GET.get('category')
+    subcategory_filter = request.GET.get('subcategory')
+    supplier_filter = request.GET.get('supplier')
+    family_filter = request.GET.get('family')
+    subfamily_filter = request.GET.get('subfamily')
+
+    qs = PurchaseOrder.objects.all()
+    if include_status_filter:
+        qs = qs.filter(Q(statuss__iexact='approved') | Q(statuss__iexact='rejected'))
+    if start:
+        qs = qs.filter(created_at__date__gte=start)
+    if end:
+        qs = qs.filter(created_at__date__lte=end)
+
+    if exclude_null_dept:
+        qs = qs.exclude(requested_by_user__dep_id__isnull=True)
+
+    if dept_filter:
+        if dept_filter.isdigit():
+            qs = qs.filter(
+                Q(purchase_request__requested_by__dep_id__id=int(dept_filter)) | Q(requested_by_user__dep_id__id=int(dept_filter)) | Q(department__id=int(dept_filter))
+            )
+        else:
+            qs = qs.filter(
+                Q(purchase_request__requested_by__dep_id__name__iexact=dept_filter) | Q(requested_by_user__dep_id__name__iexact=dept_filter) | Q(department__name__iexact=dept_filter)
+            )
+    if requester_filter:
+        if requester_filter.isdigit():
+            qs = qs.filter(
+                Q(purchase_request__requested_by__id=int(requester_filter)) | Q(requested_by_user__id=int(requester_filter))
+            )
+        else:
+            qs = qs.filter(
+                Q(purchase_request__requested_by__username__iexact=requester_filter) | Q(requested_by_user__username__iexact=requester_filter)
+            )
+
+    # product-related filters require inspecting the JSON stored in `products`
+    if any([category_filter, subcategory_filter, supplier_filter, family_filter, subfamily_filter]):
+        qs_list = list(qs)
+
+        if category_filter:
+            qs_list = [po for po in qs_list if any(
+                _prod_field_str(item, 'category', 'category_name').lower() == str(category_filter).lower()
+                for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+            )]
+
+        if subcategory_filter:
+            qs_list = [po for po in qs_list if any(
+                _prod_field_str(item, 'subcategory', 'subcategory_name').lower() == str(subcategory_filter).lower()
+                for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+            )]
+
+        if supplier_filter:
+            supplier_is_digit = supplier_filter.isdigit()
+            supplier_int = int(supplier_filter) if supplier_is_digit else None
+            qs_list = [po for po in qs_list if any(
+                (
+                    (_prod_field_str(item, 'supplier', 'supplier_name').lower() == str(supplier_filter).lower())
+                    if _prod_field_str(item, 'supplier', 'supplier_name') else False
+                ) or (
+                    supplier_is_digit and (_prod_supplier_id(item) == supplier_int)
+                )
+                for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+            )]
+
+        if family_filter:
+            qs_list = [po for po in qs_list if any(
+                _prod_field_str(item, 'family', 'family_name').lower() == str(family_filter).lower()
+                for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+            )]
+
+        if subfamily_filter:
+            qs_list = [po for po in qs_list if any(
+                _prod_field_str(item, 'subfamily', 'subfamily_name').lower() == str(subfamily_filter).lower()
+                for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
+            )]
+
+        return qs_list
+
+    return qs
+
+
 class POTotalsView(APIView):
     """Return totals of PurchaseOrders in a given period grouped by department, requester, category, subcategory or supplier."""
 
     def get(self, request):
         try:
             group_by = request.GET.get('group_by', 'summary')
-            start, end = parse_date_params(request)
+            # Use shared helper to build filtered queryset/list
+            qs = get_filtered_purchase_orders(request, include_status_filter=True)
+            # expose some filter flags used later
             dept_filter = request.GET.get('department')
             requester_filter = request.GET.get('requester')
-            # default: include PO without department (exclude_null_dept=false)
-            exclude_null_dept = str(request.GET.get('exclude_null_dept', 'false')).lower() in ('1', 'true', 'yes')
             category_filter = request.GET.get('category')
             subcategory_filter = request.GET.get('subcategory')
             supplier_filter = request.GET.get('supplier')
             family_filter = request.GET.get('family')
             subfamily_filter = request.GET.get('subfamily')
-
-            # Filter only approved or rejected POs by default
-            qs = PurchaseOrder.objects.filter(
-                Q(statuss__iexact='approved') | Q(statuss__iexact='rejected')
-            )
-            if start:
-                qs = qs.filter(created_at__date__gte=start)
-            if end:
-                qs = qs.filter(created_at__date__lte=end)
-
-            if exclude_null_dept:
-                qs = qs.exclude(requested_by_user__dep_id__isnull=True)
-
-            if dept_filter:
-                # allow filtering by either the requester's department or the PO's explicit department
-                if dept_filter.isdigit():
-                    # prefer department of the PR creator if available
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__dep_id__id=int(dept_filter)) | Q(requested_by_user__dep_id__id=int(dept_filter)) | Q(department__id=int(dept_filter))
-                    )
-                else:
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__dep_id__name__iexact=dept_filter) | Q(requested_by_user__dep_id__name__iexact=dept_filter) | Q(department__name__iexact=dept_filter)
-                    )
-            if requester_filter:
-                # prefer filtering by the PR creator (purchase_request.requested_by), fallback to PO.requested_by_user
-                if requester_filter.isdigit():
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__id=int(requester_filter)) | Q(requested_by_user__id=int(requester_filter))
-                    )
-                else:
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__username__iexact=requester_filter) | Q(requested_by_user__username__iexact=requester_filter)
-                    )
-
-            # Apply product-related filters (category, subcategory, supplier, family, subfamily)
-            if any([category_filter, subcategory_filter, supplier_filter, family_filter, subfamily_filter]):
-                qs_list = list(qs)  # Convert to list for in-memory filtering
-                
-                if category_filter:
-                    qs_list = [po for po in qs_list if any(
-                        _prod_field_str(item, 'category', 'category_name').lower() == str(category_filter).lower()
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                
-                if subcategory_filter:
-                    qs_list = [po for po in qs_list if any(
-                        _prod_field_str(item, 'subcategory', 'subcategory_name').lower() == str(subcategory_filter).lower()
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                
-                if supplier_filter:
-                    supplier_is_digit = supplier_filter.isdigit()
-                    supplier_int = int(supplier_filter) if supplier_is_digit else None
-                    qs_list = [po for po in qs_list if any(
-                        (
-                            (_prod_field_str(item, 'supplier', 'supplier_name').lower() == str(supplier_filter).lower())
-                            if _prod_field_str(item, 'supplier', 'supplier_name') else False
-                        ) or (
-                            supplier_is_digit and (_prod_supplier_id(item) == supplier_int)
-                        )
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                
-                if family_filter:
-                    qs_list = [po for po in qs_list if any(
-                        _prod_field_str(item, 'family', 'family_name').lower() == str(family_filter).lower()
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                
-                if subfamily_filter:
-                    qs_list = [po for po in qs_list if any(
-                        _prod_field_str(item, 'subfamily', 'subfamily_name').lower() == str(subfamily_filter).lower()
-                        for item in (po.products or [] if not isinstance(po.products, dict) else [po.products])
-                    )]
-                
-                qs = qs_list
+            has_any_filter = any([dept_filter, requester_filter, category_filter, subcategory_filter, supplier_filter, family_filter, subfamily_filter])
 
             # consider a PO rejected if it has a rejected_reason OR its statuss (typo field) is 'rejected'
             rejected_q = Q(rejected_reason__isnull=False) | Q(statuss__iexact='rejected')
