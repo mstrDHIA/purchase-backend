@@ -422,6 +422,6 @@ class PORejectionRateView(APIView):
                     return Response(result[0])
                 return Response(result)
 
-            return Response({'detail': 'Invalid group_by parameter'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'deta': 'Invalid group_by parameter'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'detail': f'Error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
