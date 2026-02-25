@@ -31,6 +31,7 @@ def get_total_price_dinar(request):
     else:
         print(f"[DEBUG] Department filter: {dept_filter}, PO IDs: {[po.id for po in qs]}")
         for po in qs:
+            # Try to get department info from PO, PR creator, and requester for debugging
             dep = getattr(po, 'department', None)
             dep_id = getattr(dep, 'id', None) if dep else None
             dep_name = getattr(dep, 'name', None) if dep else None
