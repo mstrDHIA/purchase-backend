@@ -1,49 +1,21 @@
 from rest_framework.decorators import api_view
 
+
 @api_view(['GET'])
 def total_price_dinar_view(request):
-    total = get_total_price_dinar(request)
-    return Response({'total_price_dinar': total})
+    totals = get_total_price_by_currency(request)
+    return Response(totals)
 
-def get_total_price_dinar(request):
+
+def get_total_price_by_currency(request):
     """
-    Calcule la somme du total price des PurchaseOrders filtrés, convertis en dinar selon la devise.
-    Taux fixes : 1 USD = 3.1 TND, 1 EUR = 3.4 TND, 1 TND = 1 TND.
+    Calcule la somme du total price des PurchaseOrders filtrés, séparée par devise (TND, USD, EUR),
+    et donne aussi le total converti en dinar.
     """
     qs = get_filtered_purchase_orders(request, include_status_filter=True)
-    dept_filter = request.GET.get('department')
-    # Affiche les IDs des PO filtrés et le filtre utilisé
-    if isinstance(qs, list):
-        print(f"[DEBUG] Department filter: {dept_filter}, PO IDs: {[getattr(po, 'id', None) for po in qs]}")
-        for po in qs:
-            dep = getattr(po, 'department', None)
-            dep_id = getattr(dep, 'id', None) if dep else None
-            dep_name = getattr(dep, 'name', None) if dep else None
-            try:
-                pr_dep = po.purchase_request.requested_by.dep_id if po.purchase_request and po.purchase_request.requested_by else None
-            except Exception:
-                pr_dep = None
-            try:
-                user_dep = po.requested_by_user.dep_id if po.requested_by_user else None
-            except Exception:
-                user_dep = None
-            print(f"[DEBUG] PO {po.id}: department=({dep_id}, {dep_name}), PR_dep={pr_dep}, user_dep={user_dep}")
-    else:
-        print(f"[DEBUG] Department filter: {dept_filter}, PO IDs: {[po.id for po in qs]}")
-        for po in qs:
-            dep = getattr(po, 'department', None)
-            dep_id = getattr(dep, 'id', None) if dep else None
-            dep_name = getattr(dep, 'name', None) if dep else None
-            try:
-                pr_dep = po.purchase_request.requested_by.dep_id if po.purchase_request and po.purchase_request.requested_by else None
-            except Exception:
-                pr_dep = None
-            try:
-                user_dep = po.requested_by_user.dep_id if po.requested_by_user else None
-            except Exception:
-                user_dep = None
-            print(f"[DEBUG] PO {po.id}: department=({dep_id}, {dep_name}), PR_dep={pr_dep}, user_dep={user_dep}")
     rates = {'TND': 1, 'USD': 3.1, 'EUR': 3.4}
+    totals = {'TND': 0, 'USD': 0, 'EUR': 0}
+
     def calc_total_price(po):
         products = getattr(po, 'products', [])
         if isinstance(products, dict):
@@ -58,28 +30,26 @@ def get_total_price_dinar(request):
                 print(f"[DEBUG] Erreur calcul produit: {item} => {e}")
         return total
 
-    def to_tnd(amount, currency):
-        rate = rates.get((currency or 'TND').upper(), 1)
-        return amount * rate
-
     if isinstance(qs, list):
-        total = 0
         for po in qs:
-            part = to_tnd(calc_total_price(po), getattr(po, 'currency', 'TND'))
-            print(f"[DEBUG] PO {getattr(po, 'id', None)}: total_price_dinar_partiel={part}")
-            total += part
-        print(f"[DEBUG] Nombre de PO filtrés: {len(qs)}")
+            currency = (getattr(po, 'currency', 'TND') or 'TND').upper()
+            if currency not in totals:
+                continue
+            part = calc_total_price(po)
+            totals[currency] += part
     else:
-        total = 0
-        count = 0
         for po in qs:
-            part = to_tnd(calc_total_price(po), getattr(po, 'currency', 'TND'))
-            print(f"[DEBUG] PO {getattr(po, 'id', None)}: total_price_dinar_partiel={part}")
-            total += part
-            count += 1
-        print(f"[DEBUG] Nombre de PO filtrés: {count}")
-    print(f"[DEBUG] Somme totale en dinar: {total}")
-    return total
+            currency = (getattr(po, 'currency', 'TND') or 'TND').upper()
+            if currency not in totals:
+                continue
+            part = calc_total_price(po)
+            totals[currency] += part
+
+    return {
+        'total_price_tnd': totals['TND'],
+        'total_price_usd': totals['USD'],
+        'total_price_eur': totals['EUR']
+    }
 
 from django.db.models import Count, Q, F
 from django.db.models.functions import Coalesce
