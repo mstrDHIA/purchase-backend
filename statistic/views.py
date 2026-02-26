@@ -12,9 +12,38 @@ def get_total_price_by_currency(request):
     Calcule la somme du total price des PurchaseOrders filtrés, séparée par devise (TND, USD, EUR),
     et donne aussi le total converti en dinar.
     """
+    # On filtre uniquement les PO approuvées
+    def only_approved(po):
+        return (getattr(po, 'statuss', '').lower() == 'approved')
+
     qs = get_filtered_purchase_orders(request, include_status_filter=True)
+    if isinstance(qs, list):
+        qs = [po for po in qs if only_approved(po)]
+    else:
+        qs = qs.filter(statuss__iexact='approved')
     rates = {'TND': 1, 'USD': 3.1, 'EUR': 3.4}
     totals = {'TND': 0, 'USD': 0, 'EUR': 0}
+
+    def normalize_currency(cur):
+        if not cur:
+            return 'TND'
+        c = str(cur).strip().upper()
+        c_no_space = c.replace(' ', '').replace('.', '')
+        # Symbol detection (robuste)
+        if '€' in c or '€' in c_no_space:
+            return 'EUR'
+        if '$' in c or '$' in c_no_space:
+            return 'USD'
+        if 'DT' in c or 'TND' in c or 'DT' in c_no_space or 'TND' in c_no_space:
+            return 'TND'
+        # Text detection
+        if c in ['EUR', 'EURO']:
+            return 'EUR'
+        if c in ['USD', 'US DOLLAR', 'DOLLAR']:
+            return 'USD'
+        if c in ['TND', 'DT', 'DINAR']:
+            return 'TND'
+        return c
 
     def calc_total_price(po):
         products = getattr(po, 'products', [])
@@ -32,14 +61,51 @@ def get_total_price_by_currency(request):
 
     if isinstance(qs, list):
         for po in qs:
-            currency = (getattr(po, 'currency', 'TND') or 'TND').upper()
+            currency_raw = getattr(po, 'currency', None)
+            currency = normalize_currency(currency_raw)
+            # Si currency n'est pas reconnu, essayer de détecter dans le champ unit_price
+            if currency not in totals:
+                products = getattr(po, 'products', [])
+                if isinstance(products, dict):
+                    products = [products]
+                for item in products:
+                    unit_raw = str(item.get('unit_price', ''))
+                    unit_raw_no_space = unit_raw.replace(' ', '')
+                    if '€' in unit_raw or '€' in unit_raw_no_space:
+                        currency = 'EUR'
+                        break
+                    if '$' in unit_raw or '$' in unit_raw_no_space:
+                        currency = 'USD'
+                        break
+                    if 'DT' in unit_raw or 'TND' in unit_raw or 'DT' in unit_raw_no_space or 'TND' in unit_raw_no_space:
+                        currency = 'TND'
+                        break
+            print(f"[DEBUG] PO {getattr(po, 'id', None)}: devise détectée = {currency}")
             if currency not in totals:
                 continue
             part = calc_total_price(po)
             totals[currency] += part
     else:
         for po in qs:
-            currency = (getattr(po, 'currency', 'TND') or 'TND').upper()
+            currency_raw = getattr(po, 'currency', None)
+            currency = normalize_currency(currency_raw)
+            if currency not in totals:
+                products = getattr(po, 'products', [])
+                if isinstance(products, dict):
+                    products = [products]
+                for item in products:
+                    unit_raw = str(item.get('unit_price', ''))
+                    unit_raw_no_space = unit_raw.replace(' ', '')
+                    if '€' in unit_raw or '€' in unit_raw_no_space:
+                        currency = 'EUR'
+                        break
+                    if '$' in unit_raw or '$' in unit_raw_no_space:
+                        currency = 'USD'
+                        break
+                    if 'DT' in unit_raw or 'TND' in unit_raw or 'DT' in unit_raw_no_space or 'TND' in unit_raw_no_space:
+                        currency = 'TND'
+                        break
+            print(f"[DEBUG] PO {getattr(po, 'id', None)}: devise détectée = {currency}")
             if currency not in totals:
                 continue
             part = calc_total_price(po)
