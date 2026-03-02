@@ -199,18 +199,30 @@ def get_filtered_purchase_orders(request, include_status_filter=True):
     the same rules used by POTotalsView. If product-related filters are present
     a list is returned because products are stored as JSON and require
     in-memory inspection.
+
+    NOTE: orders without any associated department are *always* excluded. The
+    previous implementation conditionalized this behavior on the
+    `exclude_null_dept` query parameter, but that option has been removed and
+    the filter is now applied unconditionally.
     """
     start, end = parse_date_params(request)
     dept_filter = request.GET.get('department')
     requester_filter = request.GET.get('requester')
-    exclude_null_dept = str(request.GET.get('exclude_null_dept', 'false')).lower() in ('1', 'true', 'yes')
+    # always exclude POs without a department by default
+    # previous implementation allowed toggling via exclude_null_dept param
     category_filter = request.GET.get('category')
     subcategory_filter = request.GET.get('subcategory')
     supplier_filter = request.GET.get('supplier')
     family_filter = request.GET.get('family')
     subfamily_filter = request.GET.get('subfamily')
 
-    qs = PurchaseOrder.objects.all()
+    # include related objects so later serialization/filters do not hit DB again
+    qs = PurchaseOrder.objects.all().select_related(
+        'department',
+        'purchase_request__requested_by__dep_id',
+        'requested_by_user__dep_id',
+        'purchase_request__requested_by',
+    )
     if include_status_filter:
         qs = qs.filter(Q(statuss__iexact='approved') | Q(statuss__iexact='rejected'))
     if start:
@@ -218,8 +230,8 @@ def get_filtered_purchase_orders(request, include_status_filter=True):
     if end:
         qs = qs.filter(created_at__date__lte=end)
 
-    if exclude_null_dept:
-        qs = qs.exclude(requested_by_user__dep_id__isnull=True)
+    # always exclude orders that have no department associated
+    qs = qs.exclude(requested_by_user__dep_id__isnull=True)
 
     if dept_filter:
         if dept_filter.isdigit():
@@ -412,7 +424,13 @@ class PORejectionRateView(APIView):
             dept_filter = request.GET.get('department')
             requester_filter = request.GET.get('requester')
 
-            qs = PurchaseOrder.objects.all()
+            # same optimization applied here when list endpoint calls helper
+            qs = PurchaseOrder.objects.all().select_related(
+                'department',
+                'purchase_request__requested_by__dep_id',
+                'requested_by_user__dep_id',
+                'purchase_request__requested_by',
+            )
             if start:
                 qs = qs.filter(created_at__date__gte=start)
             if end:
