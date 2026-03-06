@@ -7,10 +7,18 @@ def total_price_dinar_view(request):
 
 def get_total_price_dinar(request):
     """
-    Calcule la somme du total price des PurchaseOrders filtrés, convertis en dinar selon la devise.
+    Calcule la somme du total price des PurchaseOrders approuvés (pas rejetés) et filtrés, 
+    convertis en dinar selon la devise.
     Taux fixes : 1 USD = 3.1 TND, 1 EUR = 3.4 TND, 1 TND = 1 TND.
     """
-    qs = get_filtered_purchase_orders(request, include_status_filter=True)
+    # Get filtered orders excluding reject/approval status filter base (we'll apply our own below)
+    qs = get_filtered_purchase_orders(request, include_status_filter=False)
+    
+    # Filter to only approved orders (statuss='approved' and no rejected_reason)
+    if isinstance(qs, list):
+        qs = [po for po in qs if (getattr(po, 'statuss', '').lower() == 'approved' and po.rejected_reason_id is None)]
+    else:
+        qs = qs.filter(statuss__iexact='approved').exclude(rejected_reason__isnull=False)
     dept_filter = request.GET.get('department')
     # Affiche les IDs des PO filtrés et le filtre utilisé
     if isinstance(qs, list):
@@ -94,9 +102,11 @@ from purchase_order.serializers import PurchaseOrderSerializer
 
 
 def parse_date_params(request):
-    start = request.GET.get('start_date')
-    end = request.GET.get('end_date')
-    return start, end
+    # Support multiple date parameter names for flexibility
+    start = request.GET.get('start_date') or request.GET.get('from_date') or request.GET.get('fromDate') or request.GET.get('FromDate')
+    end = request.GET.get('end_date') or request.GET.get('to_date') or request.GET.get('toDate') or request.GET.get('ToDate')
+    # Treat empty strings as None
+    return (start or None), (end or None)
 
 
 def _prod_field_str(item, *field_names):
@@ -174,6 +184,20 @@ def get_filtered_purchase_orders(request, include_status_filter=True):
     supplier_filter = request.GET.get('supplier')
     family_filter = request.GET.get('family')
     subfamily_filter = request.GET.get('subfamily')
+    
+    # Treat 'All' as None (no filter)
+    def _normalize_filter(value):
+        if value and value.lower() not in ('all', 'none', ''):
+            return value
+        return None
+    
+    dept_filter = _normalize_filter(dept_filter)
+    requester_filter = _normalize_filter(requester_filter)
+    category_filter = _normalize_filter(category_filter)
+    subcategory_filter = _normalize_filter(subcategory_filter)
+    supplier_filter = _normalize_filter(supplier_filter)
+    family_filter = _normalize_filter(family_filter)
+    subfamily_filter = _normalize_filter(subfamily_filter)
 
     qs = PurchaseOrder.objects.all()
     if include_status_filter:
@@ -373,56 +397,32 @@ class PORejectionRateView(APIView):
     def get(self, request):
         try:
             group_by = request.GET.get('group_by', 'department')
-            start, end = parse_date_params(request)
-            dept_filter = request.GET.get('department')
-            requester_filter = request.GET.get('requester')
-
-            qs = PurchaseOrder.objects.all()
-            if start:
-                qs = qs.filter(created_at__date__gte=start)
-            if end:
-                qs = qs.filter(created_at__date__lte=end)
-
-            if dept_filter:
-                # filter by PO.department OR requester's department
-                if dept_filter.isdigit():
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__dep_id__id=int(dept_filter)) | Q(requested_by_user__dep_id__id=int(dept_filter)) | Q(department__id=int(dept_filter))
-                    )
-                else:
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__dep_id__name__iexact=dept_filter) | Q(requested_by_user__dep_id__name__iexact=dept_filter) | Q(department__name__iexact=dept_filter)
-                    )
-            if requester_filter:
-                # prefer filtering by PR creator (purchase_request.requested_by), fallback to PO.requested_by_user
-                if requester_filter.isdigit():
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__id=int(requester_filter)) | Q(requested_by_user__id=int(requester_filter))
-                    )
-                else:
-                    qs = qs.filter(
-                        Q(purchase_request__requested_by__username__iexact=requester_filter) | Q(requested_by_user__username__iexact=requester_filter)
-                    )
-
+            # Use the same filtering logic as POTotalsView for consistency
+            qs = get_filtered_purchase_orders(request, include_status_filter=False)
+            
             # consider rejected if rejected_reason set OR statuss == 'rejected'
             rejected_q = Q(rejected_reason__isnull=False) | Q(statuss__iexact='rejected')
+            
+            # Make sure qs is a QuerySet for aggregation
+            if isinstance(qs, list):
+                qs = PurchaseOrder.objects.filter(id__in=[po.id for po in qs])
 
             if group_by == 'department':
-                data = qs.values('purchase_request__requested_by__dep_id__id', 'purchase_request__requested_by__dep_id__name').annotate(total=Count('id'), rejected=Count('id', filter=rejected_q)).order_by('-total')
-                result = [{'department_id': d['purchase_request__requested_by__dep_id__id'], 'department': d['purchase_request__requested_by__dep_id__name'], 'total': d['total'], 'rejected': d['rejected'], 'rejection_rate': (d['rejected'] / d['total']) if d['total'] else 0} for d in data]
-                # If a specific department filter is provided, return single summary
-                if dept_filter and result:
-                    return Response(result[0])
+                # Use the same Coalesce approach as POTotalsView
+                qs_annot = qs.annotate(
+                    dept_id=Coalesce(F('purchase_request__requested_by__dep_id__id'), F('requested_by_user__dep_id__id'), F('department__id')),
+                    dept_name=Coalesce(F('purchase_request__requested_by__dep_id__name'), F('requested_by_user__dep_id__name'), F('department__name')),
+                )
+                data = qs_annot.values('dept_id', 'dept_name').annotate(total=Count('id'), rejected=Count('id', filter=rejected_q)).order_by('-total')
+                result = [{'department_id': d['dept_id'], 'department': d['dept_name'], 'total': d['total'], 'rejected': d['rejected'], 'rejection_rate': (d['rejected'] / d['total']) if d['total'] else 0} for d in data]
                 return Response(result)
 
             if group_by == 'requester':
+                # Use the same approach as POTotalsView (prefer PR creator)
                 data = qs.values('purchase_request__requested_by__id', 'purchase_request__requested_by__username').annotate(total=Count('id'), rejected=Count('id', filter=rejected_q)).order_by('-total')
                 result = [{'requester_id': d['purchase_request__requested_by__id'], 'requester': d['purchase_request__requested_by__username'], 'total': d['total'], 'rejected': d['rejected'], 'rejection_rate': (d['rejected'] / d['total']) if d['total'] else 0} for d in data]
-                # If a specific requester filter is provided, return single summary
-                if requester_filter and result:
-                    return Response(result[0])
                 return Response(result)
 
-            return Response({'deta': 'Invalid group_by parameter'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Invalid group_by parameter'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'detail': f'Error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
