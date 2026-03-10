@@ -447,7 +447,7 @@ class PORejectionRateView(APIView):
                         Q(purchase_request__requested_by__dep_id__name__iexact=dept_filter) | Q(requested_by_user__dep_id__name__iexact=dept_filter) | Q(department__name__iexact=dept_filter)
                     )
             if requester_filter:
-                # prefer filtering by PR creator (purchase_request.requested_by), fallback to PO.requested_by_user
+                # prefer filtering by PR creator (purchase_request.requested_by),aaaa fallback to PO.requested_by_user
                 if requester_filter.isdigit():
                     qs = qs.filter(
                         Q(purchase_request__requested_by__id=int(requester_filter)) | Q(requested_by_user__id=int(requester_filter))
