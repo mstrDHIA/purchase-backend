@@ -97,8 +97,9 @@ class Command(BaseCommand):
             # some archived, some not
             is_archived = (i % 5 == 0)  # ~20% archived
 
-            # some rejected (~30%)
-            statuss = 'rejected' if i % 3 == 0 else 'pending'
+            # choose status: for this run we want half approved and half rejected
+            # by default the loop index i starts at 1, so we can alternate using even/odd
+            statuss = 'approved' if i % 2 == 0 else 'rejected'
 
             # spread created_at across past 120 days
             created_at = now - timedelta(days=random.randint(0, 120))
