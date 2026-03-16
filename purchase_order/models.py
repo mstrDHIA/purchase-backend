@@ -23,6 +23,11 @@ class PurchaseOrder(models.Model):
     description = models.TextField()
     requested_by_user = models.ForeignKey(
         'custom_user.User', on_delete=models.CASCADE, related_name='requested_by_user')
+    # Optional explicit department on the PurchaseOrder itself to allow
+    # filtering/grouping by department without relying only on the requester profile.
+    department = models.ForeignKey(
+        'department.Department', on_delete=models.SET_NULL,
+        related_name='purchase_orders_by_department', blank=True, null=True)
     rejected_reason = models.ForeignKey(
         'reject_reasons.RejectReason', on_delete=models.CASCADE, related_name='rejected_reason', blank=True, null=True)
     
