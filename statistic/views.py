@@ -2,14 +2,146 @@ from rest_framework.decorators import api_view
 
 @api_view(['GET'])
 def total_price_dinar_view(request):
-    total = get_total_price_dinar(request)
-    return Response({'total_price_dinar': total})
+    """
+    Retourne les totaux des prix des PurchaseOrders approuvées par devise.
+    Calcule le total pour chaque devise séparément, puis convertit tout en dinar.
+    """
+    # Get filtered orders excluding reject/approval status filter base (we'll apply our own below)
+    qs = get_filtered_purchase_orders(request, include_status_filter=False)
+
+    # Filter to only approved orders (statuss='approved' and no rejected_reason)
+    if isinstance(qs, list):
+        qs = [po for po in qs if (getattr(po, 'statuss', '').lower() == 'approved' and po.rejected_reason_id is None)]
+    else:
+        qs = qs.filter(statuss__iexact='approved').exclude(rejected_reason__isnull=False)
+
+    # Apply department filter if provided
+    dept_filter = request.GET.get('department')
+    if dept_filter:
+        if isinstance(qs, list):
+            if dept_filter.isdigit():
+                qs = [po for po in qs if po.department and po.department.id == int(dept_filter)]
+            else:
+                qs = [po for po in qs if po.department and po.department.name.lower() == dept_filter.lower()]
+        else:
+            if dept_filter.isdigit():
+                qs = qs.filter(department__id=int(dept_filter))
+            else:
+                qs = qs.filter(department__name__iexact=dept_filter)
+
+    rates = {'TND': 1, 'USD': 3.1, 'EUR': 3.4, 'DT': 1}
+
+    def calc_total_price(po):
+        """Calculate total price from products JSON field with flexible key matching"""
+        products = getattr(po, 'products', [])
+        if isinstance(products, dict):
+            products = [products]
+        elif isinstance(products, str):
+            try:
+                products = json.loads(products)
+                if isinstance(products, dict):
+                    products = [products]
+            except:
+                products = []
+
+        if not products:
+            return 0
+
+        total = 0
+        for item in products:
+            # Handle if item is a string
+            if isinstance(item, str):
+                try:
+                    item = json.loads(item)
+                except:
+                    continue
+
+            if not isinstance(item, dict):
+                continue
+
+            try:
+                # Try different key names for quantity
+                qty = 0
+                for qty_key in ('quantity', 'qty', 'quantite', 'amount'):
+                    if qty_key in item and item[qty_key]:
+                        qty = float(item[qty_key])
+                        break
+
+                # Try different key names for unit price
+                unit = 0
+                for unit_key in ('unit_price', 'unitPrice', 'price', 'unit_cost', 'unitCost', 'prix'):
+                    if unit_key in item and item[unit_key]:
+                        unit = float(item[unit_key])
+                        break
+
+                # If we found both, add to total
+                if qty > 0 and unit > 0:
+                    total += qty * unit
+                # Otherwise try direct total_price field
+                elif 'total_price' in item or 'totalPrice' in item or 'total' in item:
+                    total_key = None
+                    for key in ('total_price', 'totalPrice', 'total'):
+                        if key in item:
+                            total_key = key
+                            break
+                    if total_key:
+                        total += float(item[total_key])
+            except Exception as e:
+                print(f"[DEBUG] Erreur calcul produit: {item} => {e}")
+                continue
+
+        return total
+
+    # Calculate totals by currency
+    totals_by_currency = {'TND': 0.0, 'USD': 0.0, 'EUR': 0.0}
+    total_in_dinar = 0.0
+
+    if isinstance(qs, list):
+        for po in qs:
+            curr = getattr(po, 'currency', 'TND') or 'TND'
+            # Normalize currency codes
+            if curr.upper() == 'DT':
+                curr = 'TND'
+
+            price = calc_total_price(po)
+            if curr in totals_by_currency:
+                totals_by_currency[curr] += price
+            else:
+                totals_by_currency[curr] = price
+
+            # Convert to dinar for total
+            rate = rates.get(curr.upper(), 1)
+            total_in_dinar += price * rate
+    else:
+        for po in qs:
+            curr = getattr(po, 'currency', 'TND') or 'TND'
+            # Normalize currency codes
+            if curr.upper() == 'DT':
+                curr = 'TND'
+
+            price = calc_total_price(po)
+            if curr in totals_by_currency:
+                totals_by_currency[curr] += price
+            else:
+                totals_by_currency[curr] = price
+
+            # Convert to dinar for total
+            rate = rates.get(curr.upper(), 1)
+            total_in_dinar += price * rate
+
+    return Response({
+        'total_price_tnd': totals_by_currency['TND'],
+        'total_price_usd': totals_by_currency['USD'],
+        'total_price_eur': totals_by_currency['EUR'],
+        'total_price_dinar': total_in_dinar,  # Total converti en dinar
+    })
 
 def get_total_price_dinar(request):
     """
     Calcule la somme du total price des PurchaseOrders approuvés (pas rejetés) et filtrés, 
     convertis en dinar selon la devise.
     Taux fixes : 1 USD = 3.1 TND, 1 EUR = 3.4 TND, 1 TND = 1 TND.
+    Supports department filter via ?department=<id_or_name>
     """
     # Get filtered orders excluding reject/approval status filter base (we'll apply our own below)
     qs = get_filtered_purchase_orders(request, include_status_filter=False)
@@ -19,10 +151,24 @@ def get_total_price_dinar(request):
         qs = [po for po in qs if (getattr(po, 'statuss', '').lower() == 'approved' and po.rejected_reason_id is None)]
     else:
         qs = qs.filter(statuss__iexact='approved').exclude(rejected_reason__isnull=False)
+    
+    # Apply department filter if provided
     dept_filter = request.GET.get('department')
+    if dept_filter:
+        if isinstance(qs, list):
+            if dept_filter.isdigit():
+                qs = [po for po in qs if po.department and po.department.id == int(dept_filter)]
+            else:
+                qs = [po for po in qs if po.department and po.department.name.lower() == dept_filter.lower()]
+        else:
+            if dept_filter.isdigit():
+                qs = qs.filter(department__id=int(dept_filter))
+            else:
+                qs = qs.filter(department__name__iexact=dept_filter)
+    
     # Affiche les IDs des PO filtrés et le filtre utilisé
     if isinstance(qs, list):
-        print(f"[DEBUG] Department filter: {dept_filter}, PO IDs: {[getattr(po, 'id', None) for po in qs]}")
+        print(f"[DEBUG] Department filter: {dept_filter}, Approved PO IDs: {[getattr(po, 'id', None) for po in qs]}")
         for po in qs:
             dep = getattr(po, 'department', None)
             dep_id = getattr(dep, 'id', None) if dep else None
@@ -35,9 +181,9 @@ def get_total_price_dinar(request):
                 user_dep = po.requested_by_user.dep_id if po.requested_by_user else None
             except Exception:
                 user_dep = None
-            print(f"[DEBUG] PO {po.id}: department=({dep_id}, {dep_name}), PR_dep={pr_dep}, user_dep={user_dep}")
+            print(f"[DEBUG] PO {po.id}: department=({dep_id}, {dep_name}), products={po.products}, PR_dep={pr_dep}, user_dep={user_dep}")
     else:
-        print(f"[DEBUG] Department filter: {dept_filter}, PO IDs: {[po.id for po in qs]}")
+        print(f"[DEBUG] Department filter: {dept_filter}, Approved PO IDs: {[po.id for po in qs]}")
         for po in qs:
             # Try to get department info from PO, PR creator, and requester for debugging
             dep = getattr(po, 'department', None)
@@ -51,20 +197,73 @@ def get_total_price_dinar(request):
                 user_dep = po.requested_by_user.dep_id if po.requested_by_user else None
             except Exception:
                 user_dep = None
-            print(f"[DEBUG] PO {po.id}: department=({dep_id}, {dep_name}), PR_dep={pr_dep}, user_dep={user_dep}")
+            print(f"[DEBUG] PO {po.id}: department=({dep_id}, {dep_name}), products={po.products}, PR_dep={pr_dep}, user_dep={user_dep}")
     rates = {'TND': 1, 'USD': 3.1, 'EUR': 3.4}
     def calc_total_price(po):
+        """Calculate total price from products JSON field with flexible key matching"""
         products = getattr(po, 'products', [])
         if isinstance(products, dict):
             products = [products]
+        elif isinstance(products, str):
+            try:
+                products = json.loads(products)
+                if isinstance(products, dict):
+                    products = [products]
+            except:
+                products = []
+        
+        if not products:
+            return 0
+            
         total = 0
         for item in products:
+            # Handle if item is a string
+            if isinstance(item, str):
+                try:
+                    item = json.loads(item)
+                except:
+                    continue
+            
+            if not isinstance(item, dict):
+                continue
+            
             try:
-                qty = float(item.get('quantity', 0))
-                unit = float(item.get('unit_price', 0))
-                total += qty * unit
+                # Try different key names for quantity
+                qty = 0
+                for qty_key in ('quantity', 'qty', 'quantite', 'amount'):
+                    if qty_key in item and item[qty_key]:
+                        qty = float(item[qty_key])
+                        break
+                
+                # Try different key names for unit price
+                unit = 0
+                for unit_key in ('unit_price', 'unitPrice', 'price', 'unit_cost', 'unitCost', 'prix'):
+                    if unit_key in item and item[unit_key]:
+                        unit = float(item[unit_key])
+                        break
+                
+                # If we found both, add to total
+                if qty > 0 and unit > 0:
+                    item_total = qty * unit
+                    total += item_total
+                    print(f"[DEBUG] Produit trouvé: qty={qty}, unit={unit}, subtotal={item_total}")
+                # Otherwise try direct total_price field
+                elif 'total_price' in item or 'totalPrice' in item or 'total' in item:
+                    total_key = None
+                    for key in ('total_price', 'totalPrice', 'total'):
+                        if key in item:
+                            total_key = key
+                            break
+                    if total_key:
+                        item_total = float(item[total_key])
+                        total += item_total
+                        print(f"[DEBUG] Produit trouvé via {total_key}={item_total}")
+                else:
+                    print(f"[DEBUG] ⚠️ Produit sans prix: {item.keys()}")
             except Exception as e:
                 print(f"[DEBUG] Erreur calcul produit: {item} => {e}")
+                continue
+        
         return total
 
     def to_tnd(amount, currency):
@@ -229,7 +428,7 @@ def get_filtered_purchase_orders(request, include_status_filter=True):
                 Q(purchase_request__requested_by__username__iexact=requester_filter) | Q(requested_by_user__username__iexact=requester_filter)
             )
 
-    # product-related filters require inspecting the JSON stored in `products`
+    # product-related filters require inspecting the JSON stored ivn `products`
     if any([category_filter, subcategory_filter, supplier_filter, family_filter, subfamily_filter]):
         qs_list = list(qs)
 
