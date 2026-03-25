@@ -1,0 +1,35 @@
+[
+  {
+    "model": "role.role",
+    "pk": 1,
+    "fields": {
+      "name": "Admin",
+      "description": "Administrateur système"
+    }
+  },
+  {
+    "model": "role.role",
+    "pk": 2,
+    "fields": {
+      "name": "Requester",
+      "description": "Demandeur d'achat"
+    }
+  },
+  {
+    "model": "role.role",
+    "pk": 3,
+    "fields": {
+      "name": "Validator",
+      "description": "Validateur"
+    }
+  },
+  {
+    "model": "role.role",
+    "pk": 4,
+    "fields": {
+      "name": "PO Manager",
+      "description": "Gestionnaire des achats"
+    }
+  }
+]
+
