@@ -11,10 +11,12 @@ from role.serializers import RoleSerializer
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class UserSerializer(serializers.ModelSerializer):
+    is_online = serializers.ReadOnlyField()
+
     class Meta:
         model = User
-        # fields = ['id', 'username', 'email']
         fields = '__all__'
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -37,6 +39,7 @@ class UserWithDetailsSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(source='profile_id', read_only=True)
     role = RoleSerializer(source='role_id',read_only=True)  # Adjust field name if needed
     department = DepartmentSerializer(source='dep_id', read_only=True)
+    is_online = serializers.ReadOnlyField()
 
     class Meta:
         model = User
@@ -66,14 +69,15 @@ class UserProfileRoleUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'profile', 'role','is_active','department']  # Add other user fields as needed
+        # We exclude is_active to prevent clients from accidentally deactivating users.
+        fields = ['id', 'username', 'email', 'profile', 'role', 'department']  # Add other user fields as needed
 
     def update(self, instance, validated_data):
         profile_data = validated_data.pop('profile', None)
         role_data = validated_data.pop('role', None)
         department_data = validated_data.pop('department', None)
 
-        # Update user fields
+        # Update user fields (excluding is_active)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
