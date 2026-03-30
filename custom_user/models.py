@@ -16,6 +16,7 @@ class User(AbstractUser):
         'department.Department',on_delete=models.CASCADE,
         unique=False,
         related_name='department', blank=True, null=True)
+    statut = models.BooleanField(default=True)
     
     # Add more fields as needed
 
