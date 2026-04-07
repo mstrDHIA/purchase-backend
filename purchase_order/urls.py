@@ -7,7 +7,7 @@ from .views import PurchaseOrderViewSet
 # )
 
 router = DefaultRouter()
-router.register(r'purchaseOrders', PurchaseOrderViewSet, basename='purchaseOrder')
+router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseOrder')
 
 urlpatterns = [
     path('', include(router.urls)),

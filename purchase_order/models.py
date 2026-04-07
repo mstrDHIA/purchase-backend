@@ -1,21 +1,22 @@
 from django.db import models
+from django.db.models import Max
 
 # Create your models here.
 class PurchaseOrder(models.Model):
-    id = models.IntegerField(primary_key=True,unique=True)
+    po_number = models.CharField(max_length=50, unique=True, blank=True, null=True)  # Auto-généré: PR_ID-1, PR_ID-2
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
-    statuss = models.CharField(max_length=20, default='pending')
-    #
-    status = models.CharField(max_length=20, 
-    #                           choices=[
-    #     ('pending', 'Pending'),
-    #     ('edited', 'Edited'),
-    #     ('approved', 'Approved'),
-    #     ('rejected', 'Rejected'),
-    #     ('terminated', 'Terminated')
-    # ], 
-    default='pending'),
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('edited', 'Edited'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+            ('terminated', 'Terminated')
+        ],
+        default='pending'
+    )
     approved_by_user = models.ForeignKey(
         'custom_user.User', on_delete=models.CASCADE, related_name='approved_by_user', blank=True, null=True)
     products = models.JSONField(blank=True, null=True)
@@ -46,14 +47,24 @@ class PurchaseOrder(models.Model):
         ('high', 'High')
     ], default='medium')
     refuse_reason = models.TextField(blank=True, null=True)
-    # purchase_request = models.OneToOneField(
-    #     'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_order', blank=True, null=True)
     purchase_request = models.ForeignKey(
         'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_orders', blank=True, null=True)
     is_archived = models.BooleanField(default=False)    
-    # purchase_request = models.ForeignKey(
-    #     'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_orders', blank=True, null=True)
     supplier_delivery_date = models.DateField(blank=True, null=True)
 
+    def save(self, *args, **kwargs):
+        # Auto-générer po_number si pas défini et si purchase_request existe
+        if not self.po_number and self.purchase_request:
+            try:
+                # Chercher le nombre de PO existantes pour cette PR
+                count = PurchaseOrder.objects.filter(
+                    purchase_request=self.purchase_request
+                ).count() + 1
+                self.po_number = f"{self.purchase_request.id}-{count}"
+            except:
+                pass  # Si erreur, continuer sans po_number
+        
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return self.title
+        return f"{self.po_number or self.id} - {self.title}"
