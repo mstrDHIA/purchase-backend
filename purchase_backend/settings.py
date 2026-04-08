@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'purchase_request',  # Purchase request app
     'purchase_order',  # Purchase order app
     'category',  # Category app
+    'product',  # Product app
     'supplier',  # Supplier app
     'department',  # Department app
     'reject_reasons',  # Reject reasons app
