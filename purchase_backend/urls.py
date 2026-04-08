@@ -25,6 +25,7 @@ urlpatterns = [
     path('purchase_request/', include('purchase_request.urls')),
     path('purchase_order/', include('purchase_order.urls')),
     path('category/', include('category.urls')),
+    path('product/', include('product.urls')),
     path('supplier/', include('supplier.urls')),
     path('department/', include('department.urls')),
     path('reject_reasons/', include('reject_reasons.urls')),
