@@ -1,10 +1,48 @@
 from rest_framework import serializers
-from .models import PurchaseOrder
+from .models import PurchaseOrder, PurchaseOrderLine
 from custom_user.serializers import UserSerializer  # Import your user serializer
+
+
+class PurchaseOrderLineSerializer(serializers.ModelSerializer):
+    """Serializer pour les lignes de Purchase Order"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True)
+    rejected_by_username = serializers.CharField(source='rejected_by.username', read_only=True)
+    rejected_reason_text = serializers.CharField(source='rejected_reason.reason', read_only=True)
+    
+    class Meta:
+        model = PurchaseOrderLine
+        fields = [
+            'id', 'purchase_order', 'product', 'product_name', 'supplier', 'supplier_name',
+            'quantity', 'unit_price', 'total_price', 'status',
+            'approved_by', 'approved_by_username', 'approved_at',
+            'rejected_by', 'rejected_by_username', 'rejected_at',
+            'rejected_reason', 'rejected_reason_text', 'reject_comment',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'approved_by_username', 'rejected_by_username', 
+            'rejected_reason_text', 'created_at', 'updated_at'
+        ]
+
+    def validate_quantity(self, value):
+        """Validation de la quantité"""
+        if value <= 0:
+            raise serializers.ValidationError("La quantité doit être supérieure à 0.")
+        return value
+
+    def validate_unit_price(self, value):
+        """Validation du prix unitaire"""
+        if value <= 0:
+            raise serializers.ValidationError("Le prix unitaire doit être supérieur à 0.")
+        return value
+
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
     requested_by = UserSerializer(read_only=True)
     approved_by = UserSerializer(read_only=True)
+    order_lines = PurchaseOrderLineSerializer(many=True, read_only=True)
 
     # convenience fields so clients can always see department/requester info
     department = serializers.SerializerMethodField()
