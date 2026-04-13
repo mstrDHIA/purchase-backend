@@ -46,6 +46,12 @@ class PurchaseOrder(models.Model):
         ('high', 'High')
     ], default='medium')
     refuse_reason = models.TextField(blank=True, null=True)
+    statut_line = models.CharField(max_length=20, choices=[
+        ('pending', 'Pending'),
+        ('rejected', 'Rejected'),
+        ('approved', 'Approved'),
+        ('for_modification', 'For Modification')
+    ], default='pending')
     # purchase_request = models.OneToOneField(
     #     'purchase_request.PurchaseRequest', on_delete=models.CASCADE, related_name='purchase_order', blank=True, null=True)
     purchase_request = models.ForeignKey(
